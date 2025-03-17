@@ -33,13 +33,14 @@ from plane.db.models import (
     ProjectMember,
     ProjectPage,
     Project,
+    UserRecentVisit,
 )
 from plane.utils.error_codes import ERROR_CODES
 from ..base import BaseAPIView, BaseViewSet
 from plane.bgtasks.page_transaction_task import page_transaction
 from plane.bgtasks.page_version_task import page_version
 from plane.bgtasks.recent_visited_task import recent_visited_task
-
+from plane.bgtasks.copy_s3_object import copy_s3_objects
 
 def unarchive_archive_page_and_descendants(page_id, archived_at):
     # Your SQL query
@@ -114,13 +115,15 @@ class PageViewSet(BaseViewSet):
             .distinct()
         )
 
-    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
     def create(self, request, slug, project_id):
         serializer = PageSerializer(
             data=request.data,
             context={
                 "project_id": project_id,
                 "owned_by_id": request.user.id,
+                "description": request.data.get("description", {}),
+                "description_binary": request.data.get("description_binary", None),
                 "description_html": request.data.get("description_html", "<p></p>"),
             },
         )
@@ -134,7 +137,7 @@ class PageViewSet(BaseViewSet):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
     def partial_update(self, request, slug, project_id, pk):
         try:
             page = Page.objects.get(
@@ -234,7 +237,7 @@ class PageViewSet(BaseViewSet):
             )
             return Response(data, status=status.HTTP_200_OK)
 
-    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    @allow_permission([ROLE.ADMIN], model=Page, creator=True)
     def lock(self, request, slug, project_id, pk):
         page = Page.objects.filter(
             pk=pk, workspace__slug=slug, projects__id=project_id
@@ -244,7 +247,7 @@ class PageViewSet(BaseViewSet):
         page.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    @allow_permission([ROLE.ADMIN], model=Page, creator=True)
     def unlock(self, request, slug, project_id, pk):
         page = Page.objects.filter(
             pk=pk, workspace__slug=slug, projects__id=project_id
@@ -255,7 +258,7 @@ class PageViewSet(BaseViewSet):
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    @allow_permission([ROLE.ADMIN], model=Page, creator=True)
     def access(self, request, slug, project_id, pk):
         access = request.data.get("access", 0)
         page = Page.objects.filter(
@@ -296,7 +299,7 @@ class PageViewSet(BaseViewSet):
         pages = PageSerializer(queryset, many=True).data
         return Response(pages, status=status.HTTP_200_OK)
 
-    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    @allow_permission([ROLE.ADMIN], model=Page, creator=True)
     def archive(self, request, slug, project_id, pk):
         page = Page.objects.get(pk=pk, workspace__slug=slug, projects__id=project_id)
 
@@ -323,7 +326,7 @@ class PageViewSet(BaseViewSet):
 
         return Response({"archived_at": str(datetime.now())}, status=status.HTTP_200_OK)
 
-    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    @allow_permission([ROLE.ADMIN], model=Page, creator=True)
     def unarchive(self, request, slug, project_id, pk):
         page = Page.objects.get(pk=pk, workspace__slug=slug, projects__id=project_id)
 
@@ -348,7 +351,7 @@ class PageViewSet(BaseViewSet):
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    @allow_permission([ROLE.ADMIN], creator=True, model=Page)
+    @allow_permission([ROLE.ADMIN], model=Page, creator=True)
     def destroy(self, request, slug, project_id, pk):
         page = Page.objects.get(pk=pk, workspace__slug=slug, projects__id=project_id)
 
@@ -385,6 +388,13 @@ class PageViewSet(BaseViewSet):
             entity_identifier=pk,
             entity_type="page",
         ).delete()
+        # Delete the page from recent visit
+        UserRecentVisit.objects.filter(
+            project_id=project_id,
+            workspace__slug=slug,
+            entity_identifier=pk,
+            entity_name="page",
+        ).delete(soft=False)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -553,3 +563,61 @@ class PagesDescriptionViewSet(BaseViewSet):
             return Response({"message": "Updated successfully"})
         else:
             return Response({"error": "No binary data provided"})
+
+
+class PageDuplicateEndpoint(BaseAPIView):
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    def post(self, request, slug, project_id, page_id):
+        page = Page.objects.filter(
+            pk=page_id, workspace__slug=slug, projects__id=project_id
+        ).first()
+
+        # get all the project ids where page is present
+        project_ids = ProjectPage.objects.filter(page_id=page_id).values_list(
+            "project_id", flat=True
+        )
+
+        page.pk = None
+        page.name = f"{page.name} (Copy)"
+        page.description_binary = None
+        page.owned_by = request.user
+        page.created_by = request.user
+        page.updated_by = request.user
+        page.save()
+
+        for project_id in project_ids:
+            ProjectPage.objects.create(
+                workspace_id=page.workspace_id,
+                project_id=project_id,
+                page_id=page.id,
+                created_by_id=page.created_by_id,
+                updated_by_id=page.updated_by_id,
+            )
+
+        page_transaction.delay(
+            {"description_html": page.description_html}, None, page.id
+        )
+
+        # Copy the s3 objects uploaded in the page
+        copy_s3_objects.delay(
+            entity_name="PAGE",
+            entity_identifier=page.id,
+            project_id=project_id,
+            slug=slug,
+            user_id=request.user.id,
+        )
+
+        page = (
+            Page.objects.filter(pk=page.id)
+            .annotate(
+                project_ids=Coalesce(
+                    ArrayAgg(
+                        "projects__id", distinct=True, filter=~Q(projects__id=True)
+                    ),
+                    Value([], output_field=ArrayField(UUIDField())),
+                )
+            )
+            .first()
+        )
+        serializer = PageDetailSerializer(page)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

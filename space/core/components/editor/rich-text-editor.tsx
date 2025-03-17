@@ -1,36 +1,33 @@
 import React, { forwardRef } from "react";
-// editor
-import { EditorRefApi, IMentionHighlight, IRichTextEditor, RichTextEditorWithRef } from "@plane/editor";
-// types
+// plane imports
+import { EditorRefApi, IRichTextEditor, RichTextEditorWithRef, TFileHandler } from "@plane/editor";
+import { MakeOptional } from "@plane/types";
+// components
+import { EditorMentionsRoot } from "@/components/editor";
 // helpers
-import { cn } from "@/helpers/common.helper";
 import { getEditorFileHandlers } from "@/helpers/editor.helper";
 
-interface RichTextEditorWrapperProps extends Omit<IRichTextEditor, "fileHandler" | "mentionHandler"> {
-  uploadFile: (file: File) => Promise<string>;
+interface RichTextEditorWrapperProps
+  extends MakeOptional<Omit<IRichTextEditor, "fileHandler" | "mentionHandler">, "disabledExtensions"> {
+  anchor: string;
+  uploadFile: TFileHandler["upload"];
+  workspaceId: string;
 }
 
 export const RichTextEditor = forwardRef<EditorRefApi, RichTextEditorWrapperProps>((props, ref) => {
-  const { containerClassName, uploadFile, ...rest } = props;
-  // store hooks
-
-  // use-mention
-
-  // file size
+  const { anchor, containerClassName, uploadFile, workspaceId, disabledExtensions, ...rest } = props;
 
   return (
     <RichTextEditorWithRef
       mentionHandler={{
-        highlights: function (): Promise<IMentionHighlight[]> {
-          throw new Error("Function not implemented.");
-        },
-        suggestions: undefined,
+        renderComponent: (props) => <EditorMentionsRoot {...props} />,
       }}
       ref={ref}
+      disabledExtensions={disabledExtensions ?? []}
       fileHandler={getEditorFileHandlers({
+        anchor,
         uploadFile,
-        workspaceId: "",
-        anchor: "",
+        workspaceId,
       })}
       {...rest}
       containerClassName={containerClassName}

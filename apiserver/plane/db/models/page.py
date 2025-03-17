@@ -20,7 +20,7 @@ class Page(BaseModel):
     workspace = models.ForeignKey(
         "db.Workspace", on_delete=models.CASCADE, related_name="pages"
     )
-    name = models.CharField(max_length=255, blank=True)
+    name = models.TextField(blank=True)
     description = models.JSONField(default=dict, blank=True)
     description_binary = models.BinaryField(null=True)
     description_html = models.TextField(blank=True, default="<p></p>")
@@ -49,9 +49,6 @@ class Page(BaseModel):
     is_global = models.BooleanField(default=False)
     projects = models.ManyToManyField(
         "db.Project", related_name="pages", through="db.ProjectPage"
-    )
-    teams = models.ManyToManyField(
-        "db.Team", related_name="pages", through="db.TeamPage"
     )
 
     class Meta:
@@ -93,7 +90,7 @@ class PageLog(BaseModel):
     page = models.ForeignKey(Page, related_name="page_log", on_delete=models.CASCADE)
     entity_identifier = models.UUIDField(null=True)
     entity_name = models.CharField(
-        max_length=30, choices=TYPE_CHOICES, verbose_name="Transaction Type"
+        max_length=30, verbose_name="Transaction Type"
     )
     workspace = models.ForeignKey(
         "db.Workspace", on_delete=models.CASCADE, related_name="workspace_page_log"
@@ -158,32 +155,6 @@ class ProjectPage(BaseModel):
 
     def __str__(self):
         return f"{self.project.name} {self.page.name}"
-
-
-class TeamPage(BaseModel):
-    team = models.ForeignKey(
-        "db.Team", on_delete=models.CASCADE, related_name="team_pages"
-    )
-    page = models.ForeignKey(
-        "db.Page", on_delete=models.CASCADE, related_name="team_pages"
-    )
-    workspace = models.ForeignKey(
-        "db.Workspace", on_delete=models.CASCADE, related_name="team_pages"
-    )
-
-    class Meta:
-        unique_together = ["team", "page", "deleted_at"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["team", "page"],
-                condition=models.Q(deleted_at__isnull=True),
-                name="team_page_unique_team_page_when_deleted_at_null",
-            )
-        ]
-        verbose_name = "Team Page"
-        verbose_name_plural = "Team Pages"
-        db_table = "team_pages"
-        ordering = ("-created_at",)
 
 
 class PageVersion(BaseModel):

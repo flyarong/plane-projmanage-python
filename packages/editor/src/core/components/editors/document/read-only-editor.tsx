@@ -1,3 +1,4 @@
+import { Extensions } from "@tiptap/core";
 import { forwardRef, MutableRefObject } from "react";
 // components
 import { PageRenderer } from "@/components/editors";
@@ -10,27 +11,33 @@ import { getEditorClassNames } from "@/helpers/common";
 // hooks
 import { useReadOnlyEditor } from "@/hooks/use-read-only-editor";
 // types
-import { EditorReadOnlyRefApi, IMentionHighlight, TDisplayConfig, TFileHandler } from "@/types";
+import {
+  EditorReadOnlyRefApi,
+  TDisplayConfig,
+  TExtensions,
+  TReadOnlyFileHandler,
+  TReadOnlyMentionHandler,
+} from "@/types";
 
 interface IDocumentReadOnlyEditor {
+  disabledExtensions: TExtensions[];
   id: string;
   initialValue: string;
   containerClassName: string;
   displayConfig?: TDisplayConfig;
   editorClassName?: string;
   embedHandler: any;
-  fileHandler: Pick<TFileHandler, "getAssetSrc">;
+  fileHandler: TReadOnlyFileHandler;
   tabIndex?: number;
   handleEditorReady?: (value: boolean) => void;
-  mentionHandler: {
-    highlights: () => Promise<IMentionHighlight[]>;
-  };
+  mentionHandler: TReadOnlyMentionHandler;
   forwardedRef?: React.MutableRefObject<EditorReadOnlyRefApi | null>;
 }
 
 const DocumentReadOnlyEditor = (props: IDocumentReadOnlyEditor) => {
   const {
     containerClassName,
+    disabledExtensions,
     displayConfig = DEFAULT_DISPLAY_CONFIG,
     editorClassName = "",
     embedHandler,
@@ -41,7 +48,7 @@ const DocumentReadOnlyEditor = (props: IDocumentReadOnlyEditor) => {
     initialValue,
     mentionHandler,
   } = props;
-  const extensions = [];
+  const extensions: Extensions = [];
   if (embedHandler?.issue) {
     extensions.push(
       IssueWidget({
@@ -51,6 +58,7 @@ const DocumentReadOnlyEditor = (props: IDocumentReadOnlyEditor) => {
   }
 
   const editor = useReadOnlyEditor({
+    disabledExtensions,
     editorClassName,
     extensions,
     fileHandler,
@@ -68,6 +76,7 @@ const DocumentReadOnlyEditor = (props: IDocumentReadOnlyEditor) => {
 
   return (
     <PageRenderer
+      bubbleMenuEnabled={false}
       displayConfig={displayConfig}
       editor={editor}
       editorContainerClassName={editorContainerClassName}

@@ -13,13 +13,16 @@ from .user import (
 from .workspace import (
     WorkSpaceSerializer,
     WorkSpaceMemberSerializer,
-    TeamSerializer,
     WorkSpaceMemberInviteSerializer,
     WorkspaceLiteSerializer,
     WorkspaceThemeSerializer,
     WorkspaceMemberAdminSerializer,
     WorkspaceMemberMeSerializer,
     WorkspaceUserPropertiesSerializer,
+    WorkspaceUserLinkSerializer,
+    WorkspaceRecentVisitSerializer,
+    WorkspaceHomePreferenceSerializer,
+    StickySerializer,
 )
 from .project import (
     ProjectSerializer,
@@ -69,6 +72,8 @@ from .issue import (
     IssueReactionLiteSerializer,
     IssueAttachmentLiteSerializer,
     IssueLinkLiteSerializer,
+    IssueVersionDetailSerializer,
+    IssueDescriptionVersionDetailSerializer,
 )
 
 from .module import (
@@ -115,8 +120,6 @@ from .notification import NotificationSerializer, UserNotificationPreferenceSeri
 from .exporter import ExporterHistorySerializer
 
 from .webhook import WebhookSerializer, WebhookLogSerializer
-
-from .dashboard import DashboardSerializer, WidgetSerializer
 
 from .favorite import UserFavoriteSerializer
 
